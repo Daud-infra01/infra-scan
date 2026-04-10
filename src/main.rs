@@ -5,8 +5,8 @@ use std::time::Duration;
 fn main() {
      let cpu = get_cpu_usage();
 println!("CPU Usage: {:.1}%", cpu);
-    let proc = fs::read_dir("/proc").unwrap();
-
+    let mut processes: Vec<(u64, String, String)> = Vec::new();
+let proc = fs::read_dir("/proc").unwrap();
     for entry in proc {
         let entry = entry.unwrap();
         let name = entry.file_name();
@@ -19,10 +19,17 @@ println!("CPU Usage: {:.1}%", cpu);
                 let proc_name = get_field(&contents, "Name");
                 let vm_rss = get_field(&contents, "VmRSS");
                 if let (Some(n), Some(r)) = (proc_name, vm_rss) {
-                    println!("PID: {} | Name: {} | RAM: {}", name_str, n, r);
-                }
+if let Ok(ram_val) = r.split_whitespace().next().unwrap_or("0").parse::<u64>() {
+    processes.push((ram_val, n, name_str.to_string()));
+}          
+
+  }
             }
-        }
+}        }
+processes.sort_by(|a, b| b.0.cmp(&a.0));
+println!("\n=== TOP 5 MEMORY HOGS ===");
+for (ram, name, pid) in processes.iter().take(5) {
+    println!("  {:>20} | PID: {:>6} | RAM: {} kB", name, pid, ram);
     }
 }
 
