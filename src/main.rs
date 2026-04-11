@@ -14,6 +14,8 @@ fn main() {
     println!("      INFRA-SCAN v0.1         ");
     println!("==============================");
     println!("CPU: {:.1}%\n", cpu);
+    println!("Disk  | {}", get_disk_stats());
+    println!("Net   | {}", get_net_stats());
 
     let mut processes: Vec<Process> = fs::read_dir("/proc")
         .unwrap()
@@ -81,7 +83,32 @@ fn read_cpu_stat() -> (u64, u64) {
     let total: u64 = nums.iter().sum();
     (idle, total)
 }
+fn get_disk_stats() -> String {
+    let contents = fs::read_to_string("/proc/diskstats").unwrap_or_default();
+    for line in contents.lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() > 9 && fields[2] == "nvme0n1" {
+            let reads: u64 = fields[3].parse().unwrap_or(0);
+            let writes: u64 = fields[7].parse().unwrap_or(0);
+            return format!("Reads: {}  Writes: {}", reads, writes);
+        }
+    }
+    "No disk data".to_string()
+}
 
+fn get_net_stats() -> String {
+    let contents = fs::read_to_string("/proc/net/dev").unwrap_or_default();
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.starts_with("wlp3s0") {
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            let rx_bytes: u64 = fields[1].parse().unwrap_or(0);
+            let tx_bytes: u64 = fields[9].parse().unwrap_or(0);
+            return format!("RX: {} KB  TX: {} KB", rx_bytes / 1024, tx_bytes / 1024);
+        }
+    }
+    "No network data".to_string()
+}
 fn get_cpu_usage() -> f64 {
     let (idle1, total1) = read_cpu_stat();
     thread::sleep(Duration::from_millis(500));
