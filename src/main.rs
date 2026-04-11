@@ -17,8 +17,10 @@ fn main() {
     println!("Disk  | {}", get_disk_stats());
     println!("Net   | {}", get_net_stats());
 
-    let mut processes: Vec<Process> = fs::read_dir("/proc")
-        .unwrap()
+    let mut processes: Vec<Process> = match fs::read_dir("/proc") {
+    Ok(dir) => dir,
+    Err(e) => { eprintln!("Cannot read /proc: {}", e); return; }
+}
         .filter_map(|e| {
             let e = e.ok()?;
             let pid = e.file_name().to_string_lossy().parse::<u32>().ok()?;
@@ -71,12 +73,18 @@ fn parse_process(pid: u32) -> Option<Process> {
     Some(Process { pid, name, ram_kb, state })
 }
 fn read_cpu_stat() -> (u64, u64) {
-    let contents = fs::read_to_string("/proc/stat").unwrap();
-    let first_line = contents.lines().next().unwrap();
+    let contents = match fs::read_to_string("/proc/stat") {
+    Ok(c) => c,
+    Err(_) => return (0, 0),
+};
+    let first_line = match contents.lines().next() {
+    Some(l) => l,
+    None => return (0, 0),
+};
     let nums: Vec<u64> = first_line
         .split_whitespace()
         .skip(1)
-        .map(|x| x.parse().unwrap())
+        .filter_map(|x| x.parse().ok())
         .collect();
 
     let idle = nums[3] + nums[4]; // idle + iowait
