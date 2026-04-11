@@ -1,38 +1,48 @@
 use std::fs;
 use std::thread;
 use std::time::Duration;
-
-fn main() {
-     let cpu = get_cpu_usage();
-println!("CPU Usage: {:.1}%", cpu);
-    let mut processes: Vec<(u64, String, String)> = Vec::new();
-let proc = fs::read_dir("/proc").unwrap();
-    for entry in proc {
-        let entry = entry.unwrap();
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-
-        // Only process numeric directories (PIDs)
-        if name_str.parse::<u32>().is_ok() {
-            let status_path = format!("/proc/{}/status", name_str);
-            if let Ok(contents) = fs::read_to_string(&status_path) {
-                let proc_name = get_field(&contents, "Name");
-                let vm_rss = get_field(&contents, "VmRSS");
-                if let (Some(n), Some(r)) = (proc_name, vm_rss) {
-if let Ok(ram_val) = r.split_whitespace().next().unwrap_or("0").parse::<u64>() {
-    processes.push((ram_val, n, name_str.to_string()));
-}          
-
-  }
-            }
-}        }
-processes.sort_by(|a, b| b.0.cmp(&a.0));
-println!("\n=== TOP 5 MEMORY HOGS ===");
-for (ram, name, pid) in processes.iter().take(5) {
-    println!("  {:>20} | PID: {:>6} | RAM: {} kB", name, pid, ram);
-    }
+struct Process {
+    pid: u32,
+    name: String,
+    ram_kb: u64,
+    state: String,
 }
 
+fn main() {
+    let cpu = get_cpu_usage();
+    println!("==============================");
+    println!("      INFRA-SCAN v0.1         ");
+    println!("==============================");
+    println!("CPU: {:.1}%\n", cpu);
+
+    let mut processes: Vec<Process> = fs::read_dir("/proc")
+        .unwrap()
+        .filter_map(|e| {
+            let e = e.ok()?;
+            let pid = e.file_name().to_string_lossy().parse::<u32>().ok()?;
+            parse_process(pid)
+        })
+        .collect();
+
+    processes.sort_by(|a, b| b.ram_kb.cmp(&a.ram_kb));
+
+    println!("=== TOP 5 MEMORY HOGS ===");
+    for p in processes.iter().take(5) {
+        println!("  {:>20} | PID: {:>6} | RAM: {} kB", p.name, p.pid, p.ram_kb);
+    }
+
+    println!("\n=== ZOMBIES ===");
+    let zombies: Vec<&Process> = processes.iter()
+        .filter(|p| p.state.starts_with('Z'))
+        .collect();
+    if zombies.is_empty() {
+        println!("  None.");
+    } else {
+        for p in zombies {
+            println!("  ZOMBIE: {} (PID: {})", p.name, p.pid);
+        }
+    }
+}
 fn get_field(contents: &str, field: &str) -> Option<String> {
     for line in contents.lines() {
         if line.starts_with(field) {
@@ -43,6 +53,20 @@ fn get_field(contents: &str, field: &str) -> Option<String> {
 
     None
 
+}
+
+fn parse_process(pid: u32) -> Option<Process> {
+    let status_path = format!("/proc/{}/status", pid);
+    let contents = fs::read_to_string(status_path).ok()?;
+    
+    let name = get_field(&contents, "Name")?;
+    let state = get_field(&contents, "State")?;
+    let ram_str = get_field(&contents, "VmRSS")?;
+    let ram_kb = ram_str.split_whitespace()
+        .next()?
+        .parse::<u64>().ok()?;
+
+    Some(Process { pid, name, ram_kb, state })
 }
 fn read_cpu_stat() -> (u64, u64) {
     let contents = fs::read_to_string("/proc/stat").unwrap();
